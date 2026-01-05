@@ -1,1 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>NEKO GOD - Scavenger Hunt</title>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+    body { background-color: #0a0a0c; color: #fff; font-family: 'DotGothic16', sans-serif; overflow: hidden; text-align: center; margin: 0; padding: 20px; }
+    
+    #game-container { 
+        position: relative; width: 800px; margin: 0 auto; 
+        border: 3px solid #5a4a2a; /* 高級感のあるブロンズ枠 */
+        background: #000; overflow: hidden; 
+        box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    }
 
+    .sky-layer {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        opacity: 0; transition: opacity 3.0s ease; z-index: 0;
+    }
+    .day    { background: linear-gradient(to bottom, #4488ff, #aaccff); opacity: 1; }
+    .sunset { background: linear-gradient(to bottom, #ff7e5f, #feb47b); }
+    .night  { background: linear-gradient(to bottom, #2b1055, #7597de); }
+
+    canvas { display: block; width: 100%; height: 600px; image-rendering: pixelated; position: relative; z-index: 10; background: transparent; }
+
+    /* ★ 改良版メッセージウィンドウ */
+    #info-board {
+        width: 100%; height: 120px; 
+        background: linear-gradient(to bottom, #1a1a20, #0a0a0f); /* 深みのある背景 */
+        border-top: 2px solid #8a7a5a; /* 金色の細いライン */
+        display: flex; z-index: 20; position: relative;
+        font-family: 'DotGothic16', sans-serif; font-size: 16px; text-align: left;
+    }
+    .board-section { padding: 12px; border-right: 1px solid rgba(138, 122, 90, 0.3); overflow: hidden; }
+    #stats-area { width: 160px; color: #ffcc00; text-shadow: 1px 1px 2px #5a4a2a; }
+    #log-area { flex-grow: 1; color: #e0e0e0; display: flex; flex-direction: column-reverse; letter-spacing: 0.05em; }
+    #goal-area { width: 160px; color: #ff88ff; text-align: right; text-shadow: 1px 1px 2px #5a2a5a; }
+    
+    .log-entry { margin: 2px 0; animation: logFadeIn 0.3s ease-out; }
+    @keyframes logFadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    #faith-wrapper {
+        position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+        width: 300px; text-align: center; z-index: 25;
+    }
+    #faith-container {
+        width: 100%; height: 12px; background: rgba(0,0,0,0.7);
+        border: 2px solid #8a7a5a; border-radius: 6px; overflow: hidden;
+    }
+    #faith-bar {
+        width: 100%; height: 100%; background: linear-gradient(90deg, #ffcc00, #fff2cc);
+        transition: width 0.3s ease-out;
+    }
+    .panic { animation: shake 0.1s infinite; }
+    @keyframes shake { 0% { transform: translate(1px, 1px); } 50% { transform: translate(-1px, -1px); } 100% { transform: translate(1px, -1px); } }
+
+    .overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        background: rgba(0, 0, 0, 0.9); color: white;
+        opacity: 0; pointer-events: none; transition: opacity 0.5s; z-index: 50;
+    }
+    .overlay.visible { opacity: 1; pointer-events: auto; cursor: pointer; }
+    
+    h1 { font-size: 60px; color: #ffcc00; text-shadow: 0 0 15px #ff6600; margin: 0; }
+    .controls { position: absolute; bottom: 130px; left: 15px; text-align: left; font-size: 12px; color: #8a7a5a; pointer-events: none; z-index: 20; }
+</style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="sky-day" class="sky-layer day"></div>
+        <div id="sky-sunset" class="sky-layer sunset"></div>
+        <div id="sky-night" class="sky-layer night"></div>
+
+        <div id="faith-wrapper">
+            <div id="faith-container"><div id="faith-bar"></div></div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="info-board">
+            <div id="stats-area" class="board-section">
+                <div style="font-size: 12px; opacity: 0.8;">神徳 / FAITH</div>
+                <div style="font-size: 24px; color: #fff;"><span id="cur-faith">0</span><span style="font-size: 14px; color: #8a7a5a; margin: 0 4px;">/</span><span id="max-faith" style="color: #8a7a5a;">0</span></div>
+            </div>
+            <div id="log-area" class="board-section">
+                </div>
+            <div id="goal-area" class="board-section">
+                <div id="disp-stage" style="font-size: 14px;">領域 壱</div>
+                <div style="font-size: 18px; margin-top:5px;">奉納品: <span id="disp-items">0</span></div>
+            </div>
+        </div>
+
+        <div id="screen-title" class="overlay visible" onclick="startGame()">
+            <h1>猫神様の奮闘</h1>
+            <p style="letter-spacing: 0.3em; color: #8a7a5a;">~ 万物の宝探し ~</p>
+            <p style="animation: blink 1.5s infinite; margin-top: 40px; color: #fff;">クリックして開始</p>
+        </div>
+        <div id="screen-gameover" class="overlay" onclick="startGame()">
+            <h1 style="color: #ff4444;">神徳が尽きました</h1>
+            <p>猫は動かなくなった...</p>
+        </div>
+        <div id="screen-clear" class="overlay" onclick="loadNextStage()">
+            <h1 style="color: #44ff44;">ステージクリア</h1>
+            <p>全ての品が奉納された！</p>
+        </div>
+
+        <div class="controls">
+            方向キー: 選択 / スペース: 導く / 右ドラッグ: 視点移動 / R: 再試行
+        </div>
+    </div>
+
+<script src="stages.js"></script>
+
+<script>
+// --- CONFIGURATION ---
+const TERRAIN_CONFIG = { IMPASSABLE_IDS: [0, 5, 6] };
+const BALANCE_CONFIG = { FAITH_GAIN_ITEM: 5, FAITH_GAIN_HEAL: 15, FAITH_COST_MOVE: 1 };
+const GLOW_CONFIG = {
+    ITEM: { COLOR: "#ffcc00", INTERVAL: 80, DURATION: 60, MIN_ALPHA: 0.1, MAX_ALPHA: 0.5 },
+    HEAL: { COLOR: "#88ffff", INTERVAL: 150, DURATION: 50, MIN_ALPHA: 0.0, MAX_ALPHA: 0.7 },
+    GOAL: { COLOR: "#ffffff", INTERVAL: 100, DURATION: 100, MIN_BLUR: 15, MAX_BLUR: 30 }
+};
+
+// --- LOG LOGIC ---
+function addLog(msg, color = "#e0e0e0") {
+    const logArea = document.getElementById('log-area');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.style.color = color;
+    entry.innerText = `▷ ${msg}`;
+    logArea.appendChild(entry);
+    if (logArea.childNodes.length > 4) logArea.removeChild(logArea.firstChild);
+}
+
+// --- SAMPLE DATA ---
+const SAMPLE_STAGES = [{
+    "faith": 20,
+    "terrain": [[201,201,201,201,201,201,201,201,201,201],[201,201,201,201,201,201,201,201,201,201],[201,201,202,202,202,201,201,201,201,201],[201,201,202,201,202,201,201,201,201,201],[201,201,202,201,202,202,202,201,201,201],[201,201,201,201,201,201,202,201,201,201],[201,201,201,201,201,201,202,201,201,201],[201,201,201,201,201,201,201,1,1,201],[201,201,201,201,201,201,201,1,501,201],[201,201,201,201,201,201,201,201,201,201]],
+    "objects": [[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],[-1,-1,-1,0,-1,-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],[-1,-1,-1,98,-1,-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],[-1,-1,-1,99,-1,-1,10,-1,-1,-1],[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],[-1,12,-1,-1,-1,-1,-1,-1,-1,-1]]
+}];
+const GAME_STAGES = (typeof STAGES !== 'undefined') ? STAGES : SAMPLE_STAGES;
+
+// --- ENGINE ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const uiOver = document.getElementById('screen-gameover');
+const faithBar = document.getElementById('faith-bar');
+
+const STATE = { TITLE: 0, PLAY: 1, CLEAR: 2, OVER: 3 };
+let gameState = STATE.TITLE;
+const CFG = { tileW: 32, tileH: 16, blockH: 8, mapW: 10, mapH: 10, moveSpeed: 0.1, objYOffset: 26, hitRw: 12 };
+
+let camX = 400, camY = 150, animTick = 0, isDragging = false, lastMouseX = 0, lastMouseY = 0;
+let currentStageIndex = 0, currentFaith = 0, maxFaith = 0, isStageClearing = false, mapData = null;
+let player = { x: 0, y: 0, visX: 0, visY: 0 }, cat = { x: 0, y: 0, visX: 0, visY: 0 }, cursor = { x: 0, y: 0 };
+let totalItems = 0, collectedItems = 0;
+
+const spriteSheet = new Image(); spriteSheet.src = "sprites.png";
+const imgPieces = new Image(); imgPieces.src = "pieces.png";
+
+function updateStatsUI() {
+    document.getElementById('cur-faith').innerText = currentFaith;
+    document.getElementById('max-faith').innerText = maxFaith;
+    document.getElementById('disp-stage').innerText = `ステージ ${currentStageIndex + 1}`;
+    
+    const remain = totalItems - collectedItems;
+    document.getElementById('disp-items').innerText = remain > 0 ? `${remain}つ` : "開放！";
+
+    const percent = (currentFaith / maxFaith) * 100;
+    faithBar.style.width = Math.max(0, percent) + "%";
+    if (percent <= 25) document.getElementById('faith-container').classList.add('panic');
+    else document.getElementById('faith-container').classList.remove('panic');
+
+    const [day, sunset, night] = [document.getElementById('sky-day'), document.getElementById('sky-sunset'), document.getElementById('sky-night')];
+    if (percent > 60) { day.style.opacity = 1; sunset.style.opacity = 0; night.style.opacity = 0; }
+    else if (percent > 20) { day.style.opacity = 0; sunset.style.opacity = 1; night.style.opacity = 0; }
+    else { day.style.opacity = 0; sunset.style.opacity = 0; night.style.opacity = 1; }
+}
+
+function startGame() {
+    isStageClearing = false;
+    document.getElementById('log-area').innerHTML = "";
+    if(currentStageIndex >= GAME_STAGES.length) currentStageIndex = 0;
+    const stage = GAME_STAGES[currentStageIndex];
+    mapData = JSON.parse(JSON.stringify(stage));
+    CFG.mapH = mapData.terrain.length; CFG.mapW = mapData.terrain[0].length;
+    
+    maxFaith = stage.faith || 15; currentFaith = maxFaith;
+    totalItems = 0; collectedItems = 0;
+    
+    for (let y = 0; y < CFG.mapH; y++) {
+        for (let x = 0; x < CFG.mapW; x++) {
+            const objId = mapData.objects[y][x];
+            if (objId === 99) { player.x = x; player.y = y; player.visX = x; player.visY = y; mapData.objects[y][x] = -1; cursor = {x,y}; }
+            if (objId === 98) { cat.x = x; cat.y = y; cat.visX = x; cat.visY = y; mapData.objects[y][x] = -1; }
+            if (objId === 10) totalItems++; 
+        }
+    }
+    gameState = STATE.PLAY;
+    document.querySelectorAll('.overlay').forEach(el => el.classList.remove("visible"));
+    addLog("探索を開始します。");
+    updateStatsUI();
+}
+
+function loadNextStage() { currentStageIndex = (currentStageIndex + 1) % GAME_STAGES.length; startGame(); }
+function decode(raw) { return { h: raw % 100, id: Math.floor(raw / 100) }; }
+function isoToScreen(i, j, z) { return { x: (i - j) * CFG.tileW / 2 + camX / 2, y: (i + j) * CFG.tileH / 2 - (z * CFG.blockH) + camY / 2 }; }
+function getTileHeight(tx, ty) {
+    const ix = Math.floor(tx), iy = Math.floor(ty);
+    if (ix < 0 || ix >= CFG.mapW || iy < 0 || iy >= CFG.mapH) return 0;
+    return decode(mapData.terrain[iy][ix]).h;
+}
+
+// --- LOGIC ---
+let particles = [];
+function createParticles(gx, gy, col) {
+    const h = getTileHeight(gx, gy);
+    const p = isoToScreen(gx + 0.5, gy + 0.5, h);
+    for(let i=0; i<8; i++) {
+        particles.push({x:p.x, y:p.y-16, vx:(Math.random()-0.5)*4, vy:(Math.random()-0.5)*4 - 2, life:30, col:col});
+    }
+}
+
+function checkItemsAt(ox, oy) {
+    const objId = mapData.objects[oy][ox];
+    if (objId === 10) { 
+        mapData.objects[oy][ox] = -1; collectedItems++;
+        currentFaith = Math.min(maxFaith, currentFaith + BALANCE_CONFIG.FAITH_GAIN_ITEM);
+        addLog(`奉納品を発見！ 神徳 +${BALANCE_CONFIG.FAITH_GAIN_ITEM}`, "#ffcc00");
+        createParticles(ox, oy, GLOW_CONFIG.ITEM.COLOR);
+        if (collectedItems >= totalItems) addLog("扉が開きました。", "#ff88ff");
+    }
+    else if (objId === 12) { 
+        mapData.objects[oy][ox] = -1;
+        currentFaith = Math.min(maxFaith, currentFaith + BALANCE_CONFIG.FAITH_GAIN_HEAL);
+        addLog(`奇跡が起きた！ 神徳 +${BALANCE_CONFIG.FAITH_GAIN_HEAL}`, "#88ffff");
+        createParticles(ox, oy, GLOW_CONFIG.HEAL.COLOR);
+    }
+    updateStatsUI();
+}
+
+function tryPushCat(px, py) {
+    const dx = cat.x - px, dy = cat.y - py;
+    if (Math.abs(dx) + Math.abs(dy) === 1) {
+        const nx = cat.x + dx, ny = cat.y + dy;
+        if (nx >= 0 && nx < CFG.mapW && ny >= 0 && ny < CFG.mapH) {
+            const terrain = decode(mapData.terrain[ny][nx]);
+            if (TERRAIN_CONFIG.IMPASSABLE_IDS.includes(terrain.id)) {
+                addLog("その場所は猫には危険です。"); return false; 
+            }
+            if (Math.abs(getTileHeight(nx, ny) - getTileHeight(cat.x, cat.y)) > 1) {
+                addLog("高低差があり進めません。"); return false;
+            }
+            if (nx === player.x && ny === player.y) return false;
+            if (mapData.objects[ny][nx] === 0 && collectedItems < totalItems) {
+                addLog("扉は閉ざされています。"); return false;
+            }
+
+            currentFaith -= BALANCE_CONFIG.FAITH_COST_MOVE;
+            updateStatsUI();
+            cat.x = nx; cat.y = ny;
+            checkItemsAt(nx, ny);
+
+            if (currentFaith <= 0 && mapData.objects[cat.y][cat.x] !== 0) {
+                setTimeout(() => { gameState = STATE.OVER; uiOver.classList.add("visible"); }, 500);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+// --- RENDER ---
+function drawDiamond(p, color, isFill) {
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y-8); ctx.lineTo(p.x+16, p.y); ctx.lineTo(p.x, p.y+8); ctx.lineTo(p.x-16, p.y); ctx.closePath();
+    if(isFill) ctx.fill(); else ctx.stroke();
+}
+function drawTileHighlight(p, color, alpha) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.shadowBlur = 20; ctx.shadowColor = color;
+    drawDiamond(p, color, true); ctx.restore();
+}
+function drawFloatingSphere(p, color, alpha) {
+    ctx.save(); ctx.globalAlpha *= alpha;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.2)"; ctx.beginPath(); ctx.ellipse(p.x, p.y, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    const floatY = Math.sin(animTick * 0.1) * 3 - 13;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y + floatY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+function getPulse(tick, interval, duration, offset) {
+    const t = (tick + offset) % interval;
+    if (t < duration) return Math.sin((t / duration) * Math.PI);
+    return 0; 
+}
+
+function render() {
+    if (!mapData) return;
+    ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, canvas.width/2, canvas.height/2);
+    ctx.imageSmoothingEnabled = false;
+
+    let floorList = [];
+    for (let y = 0; y < CFG.mapH; y++) for (let x = 0; x < CFG.mapW; x++) {
+        const info = decode(mapData.terrain[y][x]);
+        floorList.push({ x, y, id: info.id, h: info.h, depth: x + y });
+    }
+    floorList.sort((a, b) => a.depth - b.depth);
+    floorList.forEach(t => {
+        const p = isoToScreen(t.x, t.y, 0);
+        ctx.drawImage(spriteSheet, t.id*32, 0, 32, 48, p.x-16, p.y-8, 32, 48);
+    });
+
+    let renderList = [];
+    const Z_BASE = 1000;
+    for (let y = 0; y < CFG.mapH; y++) for (let x = 0; x < CFG.mapW; x++) {
+        const info = decode(mapData.terrain[y][x]);
+        const baseD = (x + y) * Z_BASE;
+        for (let z = 1; z < info.h; z++) renderList.push({ type:'WALL', x, y, z, id:info.id, depth: baseD + z });
+        const oid = mapData.objects[y][x];
+        if (oid !== -1) {
+            if (oid === 10 || oid === 12) renderList.push({ type:'HIGHLIGHT', x, y, h:info.h, id:oid, depth: baseD + info.h + 0.1 });
+            else renderList.push({ type:'OBJ', x, y, h:info.h, id:oid, depth: baseD + info.h + 0.5 });
+        }
+        if (gameState === STATE.PLAY && cursor.x === x && cursor.y === y) renderList.push({ type:'CURSOR', x, y, h:info.h, depth: baseD + info.h + 0.1 });
+    }
+    
+    [player, cat].forEach(u => {
+        const h = getTileHeight(u.visX+0.5, u.visY+0.5);
+        renderList.push({ type:'CHAR', unit:u, h:h, depth: (u.visX + u.visY + 0.3) * Z_BASE + h });
+    });
+    
+    let nextCat = null;
+    if (gameState === STATE.PLAY) {
+        const dx = cat.x - cursor.x, dy = cat.y - cursor.y;
+        if (Math.abs(dx) + Math.abs(dy) === 1) {
+            const nx = cat.x + dx, ny = cat.y + dy;
+            if (nx >= 0 && nx < CFG.mapW && ny >= 0 && ny < CFG.mapH) {
+                const targetTerrain = decode(mapData.terrain[ny][nx]);
+                const isTerrainPassable = !TERRAIN_CONFIG.IMPASSABLE_IDS.includes(targetTerrain.id);
+                const isGoalLocked = (mapData.objects[ny][nx] === 0 && collectedItems < totalItems);
+                if (isTerrainPassable && !isGoalLocked && Math.abs(getTileHeight(nx, ny) - getTileHeight(cat.x, cat.y)) <= 1) {
+                    nextCat = { x: nx, y: ny };
+                    const h = getTileHeight(nx, ny);
+                    renderList.push({ type:'NAV', x:nx, y:ny, h:h, depth: (nx + ny) * Z_BASE + h });
+                }
+            }
+        }
+    }
+    particles.forEach(pt => { renderList.push({ type:'PT', pt:pt, depth: 999999 }); });
+    renderList.sort((a, b) => a.depth - b.depth);
+
+    renderList.forEach(item => {
+        if (item.type === 'WALL') {
+            const p = isoToScreen(item.x, item.y, item.z);
+            ctx.drawImage(spriteSheet, item.id*32, 0, 32, 48, p.x-16, p.y-8, 32, 48);
+        } else if (item.type === 'HIGHLIGHT') {
+            const p = isoToScreen(item.x + 0.5, item.y + 0.5, item.h);
+            const offset = item.x * 23 + item.y * 37; 
+            if (item.id === 10) { 
+                const cfg = GLOW_CONFIG.ITEM;
+                const alpha = cfg.MIN_ALPHA + getPulse(animTick, cfg.INTERVAL, cfg.DURATION, offset) * (cfg.MAX_ALPHA - cfg.MIN_ALPHA);
+                drawTileHighlight(p, cfg.COLOR, alpha);
+            } else if (item.id === 12) {
+                const cfg = GLOW_CONFIG.HEAL;
+                const alpha = cfg.MIN_ALPHA + getPulse(animTick, cfg.INTERVAL, cfg.DURATION, offset) * (cfg.MAX_ALPHA - cfg.MIN_ALPHA);
+                drawTileHighlight(p, cfg.COLOR, alpha);
+            }
+        } else if (item.type === 'OBJ') {
+            const p = isoToScreen(item.x + 0.5, item.y + 0.5, item.h);
+            if (item.id === 0) {
+                ctx.save();
+                if (collectedItems < totalItems) ctx.filter = "brightness(40%)";
+                else { 
+                    const cfg = GLOW_CONFIG.GOAL;
+                    const blur = cfg.MIN_BLUR + getPulse(animTick, cfg.INTERVAL, cfg.DURATION, 0) * (cfg.MAX_BLUR - cfg.MIN_BLUR);
+                    ctx.shadowColor = cfg.COLOR; ctx.shadowBlur = blur; 
+                }
+                ctx.drawImage(spriteSheet, item.id*32, 48, 32, 48, p.x-16, p.y-CFG.objYOffset, 32, 48);
+                ctx.restore();
+            } else { ctx.drawImage(spriteSheet, item.id*32, 48, 32, 48, p.x-16, p.y-CFG.objYOffset, 32, 48); }
+        } else if (item.type === 'CURSOR') {
+            const p = isoToScreen(item.x + 0.5, item.y + 0.5, item.h + 0.05);
+            drawDiamond(p, "rgba(0,150,255,0.4)", true);
+        } else if (item.type === 'NAV') {
+             const p = isoToScreen(item.x + 0.5, item.y + 0.5, item.h);
+             drawFloatingSphere(p, "red", 1.0);
+        } else if (item.type === 'CHAR') {
+            const u = item.unit;
+            const p = isoToScreen(u.visX+0.5, u.visY+0.5, item.h);
+            const pieceId = (u === player) ? 0 : 32; 
+            ctx.drawImage(imgPieces, pieceId, 0, 32, 48, p.x-16, p.y-44, 32, 48);
+        } else if (item.type === 'PT') {
+            const pt = item.pt;
+            ctx.fillStyle = pt.col; ctx.fillRect(pt.x, pt.y, 2, 2);
+        }
+    });
+
+    ctx.globalAlpha = 0.3;
+    [player, cat].forEach(u => {
+        const h = getTileHeight(u.visX + 0.5, u.visY + 0.5);
+        const p = isoToScreen(u.visX+0.5, u.visY+0.5, h);
+        const pieceId = (u === player) ? 0 : 32;
+        ctx.drawImage(imgPieces, pieceId, 0, 32, 48, p.x - 16, p.y - 44, 32, 48);
+    });
+    ctx.globalAlpha = 1.0;
+}
+
+function update() {
+    animTick++;
+    player.visX += (player.x - player.visX) * CFG.moveSpeed; player.visY += (player.y - player.visY) * CFG.moveSpeed;
+    cat.visX += (cat.x - cat.visX) * CFG.moveSpeed; cat.visY += (cat.y - cat.visY) * CFG.moveSpeed;
+    for(let i=particles.length-1; i>=0; i--) {
+        let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life--; p.vy += 0.2;
+        if(p.life <= 0) particles.splice(i, 1);
+    }
+    if (gameState === STATE.PLAY && !isStageClearing && mapData.objects[cat.y][cat.x] === 0) {
+        if (collectedItems >= totalItems) {
+            isStageClearing = true; gameState = STATE.CLEAR;
+            setTimeout(() => { document.getElementById('screen-clear').classList.add("visible"); }, 300);
+        }
+    }
+}
+function loop() { update(); render(); requestAnimationFrame(loop); }
+
+function getMouseTile(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width) / 2;
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height) / 2;
+    let best = null;
+    for (let sum = 0; sum <= (CFG.mapW + CFG.mapH - 2); sum++) {
+        for (let i = 0; i <= sum; i++) {
+            let j = sum - i; if (i >= CFG.mapW || j >= CFG.mapH) continue;
+            const h = getTileHeight(i, j);
+            const p = isoToScreen(i + 0.5, j + 0.5, h);
+            p.y += 8; 
+            if (Math.sqrt((mx - p.x)**2 + (my - p.y)**2) < CFG.hitRw) best = {x:i, y:j};
+        }
+    }
+    return best;
+}
+
+canvas.addEventListener('mousedown', e => {
+    if (e.button === 2) { isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; return; }
+    if (gameState === STATE.TITLE) { startGame(); return; }
+    if (gameState === STATE.PLAY) {
+        if (Math.abs(cat.x - cat.visX) > 0.05 || Math.abs(cat.y - cat.visY) > 0.05) return;
+        const t = getMouseTile(e);
+        if (t) { 
+            cursor = t; 
+            if (t.x === cat.x && t.y === cat.y) return;
+            player.x = t.x; player.y = t.y; tryPushCat(t.x, t.y); 
+        }
+    }
+});
+window.addEventListener('mousemove', e => {
+    if (isDragging) { camX += (e.clientX - lastMouseX) * 2; camY += (e.clientY - lastMouseY) * 2; lastMouseX = e.clientX; lastMouseY = e.clientY; }
+    else if (gameState === STATE.PLAY) { const t = getMouseTile(e); if (t) cursor = t; }
+});
+window.addEventListener('mouseup', () => isDragging = false);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('keydown', e => {
+    if (gameState !== STATE.PLAY) return;
+    if (e.key === 'r') startGame();
+    let dx = 0, dy = 0;
+    if (e.key === 'ArrowUp') dy = -1; if (e.key === 'ArrowDown') dy = 1;
+    if (e.key === 'ArrowLeft') dx = -1; if (e.key === 'ArrowRight') dx = 1;
+    const nx = cursor.x + dx, ny = cursor.y + dy;
+    if (nx >= 0 && nx < CFG.mapW && ny >= 0 && ny < CFG.mapH) cursor = {x: nx, y: ny};
+    if (e.key === ' ') { if (cursor.x !== cat.x || cursor.y !== cat.y) { player.x = cursor.x; player.y = cursor.y; tryPushCat(cursor.x, cursor.y); } }
+});
+
+let loaded = 0; const checkLoad = () => { if(++loaded === 2) loop(); };
+spriteSheet.onload = checkLoad; imgPieces.onload = checkLoad;
+setTimeout(() => { if(loaded < 2) { loaded=2; loop(); } }, 1000);
+</script>
+</body>
+</html>
